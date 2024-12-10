@@ -4,50 +4,75 @@ fn main() {
     println!("Hello, world!");
 }
 
+enum ParseState {
+    Base,
+    LineComment,
+    MultiLineComment,
+    EndingMultiLineComment,
+    StringLiteral(char),
+    StringLiteralEscaped(char),
+}
+
 fn process(inp: &str) -> String {
     let mut output = String::with_capacity(inp.len());
-    let mut reading_line_comment = false;
-    let mut reading_multiline_comment = false;
-    let mut ignore = 0;
-    let mut take = 0;
+    let mut parse_state = ParseState::Base;
 
-    let mut string_literal_until: Option<char> = None;
     for (i, ch) in inp.char_indices() {
-        if ignore > 0 {
-            ignore -= 1;
-        } else if take > 0 {
-            take -= 1;
-            output.push(ch);
-        } else if let Some(literal_end) = string_literal_until {
-            if ch == literal_end {
-                string_literal_until = None;
+        use ParseState::*;
+        match parse_state {
+            LineComment => {
+                if starts_with_newline(&inp[i..]) {
+                    parse_state = Base;
+                    output.push(ch);
+                }
             }
-            if escapes_literal_end(ch) {
-                take = 1;
+            MultiLineComment => {
+                if multiline_comment_end(&inp[i..]) {
+                    parse_state = EndingMultiLineComment;
+                }
             }
-            output.push(ch);
-        } else if starts_string_literal(&ch) {
-            string_literal_until = Some(ch);
-            output.push(ch);
-        } else if reading_line_comment {
-            if starts_with_newline(&inp[i..]) {
-                reading_line_comment = false;
+            EndingMultiLineComment => {
+                parse_state = Base;
+            }
+            StringLiteral(literal_end) => {
+                if ch == literal_end {
+                    parse_state = Base;
+                } else if escapes_literal_end(ch) {
+                    parse_state = StringLiteralEscaped(literal_end);
+                }
                 output.push(ch);
             }
-        } else if reading_multiline_comment {
-            if inp[i..].starts_with("*/") {
-                reading_multiline_comment = false;
-                ignore = 1;
+            StringLiteralEscaped(literal_end) => {
+                parse_state = StringLiteral(literal_end);
+                output.push(ch);
             }
-        } else if inp[i..].starts_with("/*") {
-            reading_multiline_comment = true;
-        } else if inp[i..].starts_with("//") {
-            reading_line_comment = true;
-        } else {
-            output.push(ch);
+            Base => {
+                if starts_string_literal(&ch) {
+                    parse_state = StringLiteral(ch);
+                    output.push(ch);
+                } else if multiline_comment_start(&inp[i..]) {
+                    parse_state = MultiLineComment;
+                } else if line_comment_start(&inp[i..]) {
+                    parse_state = LineComment;
+                } else {
+                    output.push(ch);
+                }
+            }
         }
     }
     output
+}
+
+fn multiline_comment_start(rest: &str) -> bool {
+    rest.starts_with("/*")
+}
+
+fn multiline_comment_end(rest: &str) -> bool {
+    rest.starts_with("*/")
+}
+
+fn line_comment_start(rest: &str) -> bool {
+    rest.starts_with("//")
 }
 
 fn starts_with_newline(inp: &str) -> bool {
