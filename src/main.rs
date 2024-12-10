@@ -8,25 +8,26 @@ fn process(inp: &str) -> String {
     let mut output = String::with_capacity(inp.len());
     let mut reading_line_comment = false;
     let mut reading_multiline_comment = false;
+    let mut ignore = 0;
     let mut take = 0;
-    let mut escape_until: Option<char> = None;
+
+    let mut string_literal_until: Option<char> = None;
     for (i, ch) in inp.char_indices() {
-        println!(
-            "{i}, {ch}, lc: {}, mlc: {}, t: {}, rest: {}",
-            reading_line_comment,
-            reading_multiline_comment,
-            take,
-            &inp[i..]
-        );
-        if take > 0 {
+        if ignore > 0 {
+            ignore -= 1;
+        } else if take > 0 {
             take -= 1;
-        } else if let Some(escape) = escape_until {
-            if ch == escape {
-                escape_until = None;
+            output.push(ch);
+        } else if let Some(literal_end) = string_literal_until {
+            if ch == literal_end {
+                string_literal_until = None;
+            }
+            if escapes_literal_end(ch) {
+                take = 1;
             }
             output.push(ch);
-        } else if starts_escape(&ch) {
-            escape_until = Some(ch);
+        } else if starts_string_literal(&ch) {
+            string_literal_until = Some(ch);
             output.push(ch);
         } else if reading_line_comment {
             if starts_with_newline(&inp[i..]) {
@@ -36,7 +37,7 @@ fn process(inp: &str) -> String {
         } else if reading_multiline_comment {
             if inp[i..].starts_with("*/") {
                 reading_multiline_comment = false;
-                take = 1;
+                ignore = 1;
             }
         } else if inp[i..].starts_with("/*") {
             reading_multiline_comment = true;
@@ -53,7 +54,11 @@ fn starts_with_newline(inp: &str) -> bool {
     inp.starts_with("\n") || inp.starts_with("\r\n")
 }
 
-fn starts_escape(ch: &char) -> bool {
+fn escapes_literal_end(ch: char) -> bool {
+    ch == '\\'
+}
+
+fn starts_string_literal(ch: &char) -> bool {
     ['\"', '\''].contains(ch)
 }
 
@@ -64,6 +69,33 @@ mod tests {
     #[test]
     fn it_does_not_strip_comments_inside_literals() {
         let inp = "I am code \"with a // funky /* literal */\"";
+        assert_eq!(&process(inp), inp);
+    }
+
+    #[test]
+    fn it_supports_escaped_quotes_inside_literals() {
+        let inp = r#"I am code " with \" an /* even */ funkier // literal " "#;
+        assert_eq!(&process(inp), inp);
+    }
+
+    #[test]
+    fn it_supports_escaping_the_escape_character_inside_string_literals() {
+        let inp = r#"I am code "with a literal \\"//and a comment"#;
+        let expected = r#"I am code "with a literal \\""#;
+        assert_eq!(&process(inp), expected);
+    }
+
+    #[test]
+    fn it_supports_single_and_double_quotes_and_they_dont_close_each_other() {
+        let inp = r#"'single /* quote */ -> " <- // still literal '"#;
+        assert_eq!(&process(inp), inp);
+        let inp = r#""double /* quote */ -> ' <- // still literal ""#;
+        assert_eq!(&process(inp), inp);
+    }
+
+    #[test]
+    fn string_literals_can_contain_newlines_and_unclosed_literals_run_till_eof() {
+        let inp = "' <- all\n\n\n\r\nof // this /* is */ \ninside\n a literal";
         assert_eq!(&process(inp), inp);
     }
 
