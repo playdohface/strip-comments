@@ -1,7 +1,20 @@
-use std::fs::read;
-
 fn main() {
-    println!("Hello, world!");
+    let mut args = std::env::args();
+    let source = if let (Some(_), Some(sourcepath)) = (args.next(), args.next()) {
+        std::fs::read_to_string(sourcepath)
+    } else {
+        eprintln!("Please specify a source file as the first argument.");
+        std::process::exit(1);
+    };
+
+    let result = match source {
+        Ok(source) => strip_comments(&source),
+        Err(e) => {
+            eprintln!("Could not open file: {}", e);
+            std::process::exit(1);
+        }
+    };
+    print!("{result}");
 }
 
 enum ParseState {
@@ -13,12 +26,12 @@ enum ParseState {
     StringLiteralEscaped(char),
 }
 
-fn process(inp: &str) -> String {
+fn strip_comments(inp: &str) -> String {
+    use ParseState::*;
     let mut output = String::with_capacity(inp.len());
-    let mut parse_state = ParseState::Base;
+    let mut parse_state = Base;
 
     for (i, ch) in inp.char_indices() {
-        use ParseState::*;
         match parse_state {
             LineComment => {
                 if starts_with_newline(&inp[i..]) {
@@ -84,7 +97,7 @@ fn escapes_literal_end(ch: char) -> bool {
 }
 
 fn starts_string_literal(ch: &char) -> bool {
-    ['\"', '\''].contains(ch)
+    ['"', '\''].contains(ch)
 }
 
 #[cfg(test)]
@@ -94,83 +107,83 @@ mod tests {
     #[test]
     fn it_does_not_strip_comments_inside_literals() {
         let inp = "I am code \"with a // funky /* literal */\"";
-        assert_eq!(&process(inp), inp);
+        assert_eq!(&strip_comments(inp), inp);
     }
 
     #[test]
     fn it_supports_escaped_quotes_inside_literals() {
         let inp = r#"I am code " with \" an /* even */ funkier // literal " "#;
-        assert_eq!(&process(inp), inp);
+        assert_eq!(&strip_comments(inp), inp);
     }
 
     #[test]
     fn it_supports_escaping_the_escape_character_inside_string_literals() {
         let inp = r#"I am code "with a literal \\"//and a comment"#;
         let expected = r#"I am code "with a literal \\""#;
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
     fn it_supports_single_and_double_quotes_and_they_dont_close_each_other() {
         let inp = r#"'single /* quote */ -> " <- // still literal '"#;
-        assert_eq!(&process(inp), inp);
+        assert_eq!(&strip_comments(inp), inp);
         let inp = r#""double /* quote */ -> ' <- // still literal ""#;
-        assert_eq!(&process(inp), inp);
+        assert_eq!(&strip_comments(inp), inp);
     }
 
     #[test]
     fn string_literals_can_contain_newlines_and_unclosed_literals_run_till_eof() {
         let inp = "' <- all\n\n\n\r\nof // this /* is */ \ninside\n a literal";
-        assert_eq!(&process(inp), inp);
+        assert_eq!(&strip_comments(inp), inp);
     }
 
     #[test]
     fn it_strips_line_comments() {
         let inp = "I am code! //And I am a comment! /* still */\n";
         let expected = "I am code! \n";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
 
         let inp = "I am code! //And I am a comment! /* still */\nCode again //But not this\n";
         let expected = "I am code! \nCode again \n";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
     fn it_strips_multiline_comments() {
         let inp = "I am code /* And I\n\r\n\n am not */ and I am too.";
         let expected = "I am code  and I am too.";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
     fn it_handles_windows_newlines_and_leaves_them_intact() {
         let inp = "I am code\r\n//I am a comment\r\n";
         let expected = "I am code\r\n\r\n";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
     fn unclosed_multiline_comments_will_strip_until_eof() {
         let inp = "code/*\n\n\nA lot of commentary\r\netc";
         let expected = "code";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
     fn trailing_newline_is_optional_and_preserved() {
         let inp = "code//comment";
         let expected = "code";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
 
         let inp = "code//comment\r\n";
         let expected = "code\r\n";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
     fn it_handles_multibyte_characters() {
         let inp = "🌴🌴🌴/*🦎🦎🦎*/🌴🌴//🦎🦎🦎";
         let expected = "🌴🌴🌴🌴🌴";
-        assert_eq!(&process(inp), expected);
+        assert_eq!(&strip_comments(inp), expected);
     }
 }
