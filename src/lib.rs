@@ -77,8 +77,10 @@ pub fn strip_comments(input: &str) -> String {
                     parse_state = StringLiteral(literal_end);
                     output.push(ch);
                 } else if multiline_comment_start(&input[i..]) {
+                    remove_trailing_newline_and_whitespace(&mut output);
                     parse_state = MultiLineComment;
                 } else if line_comment_start(&input[i..]) {
+                    remove_trailing_newline_and_whitespace(&mut output);
                     parse_state = LineComment;
                 } else {
                     output.push(ch);
@@ -87,6 +89,23 @@ pub fn strip_comments(input: &str) -> String {
         }
     }
     output
+}
+
+/// removes a single newline followed by any number of non-newline whitespace from the end
+fn remove_trailing_newline_and_whitespace(input: &mut String) {
+    let trimmed = input.trim_end_matches(|c: char| c.is_whitespace() && !['\n', '\r'].contains(&c));
+    let remove_until = if trimmed.ends_with("\r\n") {
+        '\r'
+    } else if trimmed.ends_with("\n") {
+        '\n'
+    } else {
+        return;
+    };
+    while let Some(c) = input.pop() {
+        if c == remove_until {
+            return;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -146,6 +165,20 @@ mod tests {
     }
 
     #[test]
+    fn it_removes_lines_with_only_whitespace_and_comments_entirely() {
+        let inp =
+            "I am code\n\t //And I am only commentary\nCode again\r\n\t /*long\ncommentary\n*/";
+        let expected = "I am code\nCode again";
+        assert_eq!(&strip_comments(inp), expected);
+    }
+
+    #[test]
+    fn it_leaves_empty_lines_untouched() {
+        let inp = "\t . \n\t \r\n\n\n\n\n\r\n\t";
+        assert_eq!(&strip_comments(inp), inp);
+    }
+
+    #[test]
     fn it_strips_multiline_comments() {
         let inp = "I am code /* And I\n\r\n\n am not */ and I am too.";
         let expected = "I am code  and I am too.";
@@ -155,7 +188,7 @@ mod tests {
     #[test]
     fn it_handles_windows_newlines_and_leaves_them_intact() {
         let inp = "I am code\r\n//I am a comment\r\n";
-        let expected = "I am code\r\n\r\n";
+        let expected = "I am code\r\n";
         assert_eq!(&strip_comments(inp), expected);
     }
 

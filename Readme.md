@@ -4,6 +4,8 @@ A simple dependency-less command line tool that will strip comments from source 
 
 Line comments start with `//` and run until but not including the next newline or end of file.
 Multiline comments start with `/*` and run until `*/` or end of file.
+Lines containing only whitespace and comments will be removed entirely. 
+However, empty lines and lines containing only whitespace but no comments will be left untouched.
 
 If comments occur inside string literals they are ignored (i.e. not stripped).
 String literals are either delimited by single quote (`'`) or double quote (`"`) on each side, or as Rust raw strings starting with `r#"` and ending with `"#`. 
