@@ -22,8 +22,8 @@ enum ParseState {
     LineComment,
     MultiLineComment,
     EndingMultiLineComment,
-    StringLiteral(char),
-    StringLiteralEscaped(char),
+    StringLiteral(&'static str),
+    StringLiteralEscaped(&'static str),
 }
 
 fn strip_comments(inp: &str) -> String {
@@ -48,7 +48,7 @@ fn strip_comments(inp: &str) -> String {
                 parse_state = Base;
             }
             StringLiteral(literal_end) => {
-                if ch == literal_end {
+                if inp[i..].starts_with(literal_end) {
                     parse_state = Base;
                 } else if escapes_literal_end(ch) {
                     parse_state = StringLiteralEscaped(literal_end);
@@ -60,8 +60,8 @@ fn strip_comments(inp: &str) -> String {
                 output.push(ch);
             }
             Base => {
-                if starts_string_literal(&ch) {
-                    parse_state = StringLiteral(ch);
+                if let Some(literal_end) = string_literals(&inp[i..]) {
+                    parse_state = StringLiteral(literal_end);
                     output.push(ch);
                 } else if multiline_comment_start(&inp[i..]) {
                     parse_state = MultiLineComment;
@@ -96,8 +96,17 @@ fn escapes_literal_end(ch: char) -> bool {
     ch == '\\'
 }
 
-fn starts_string_literal(ch: &char) -> bool {
-    ['"', '\''].contains(ch)
+/// if the given input opens a string literal, returns the corresponding closing sequence and None otherwise
+fn string_literals(rest: &str) -> Option<&'static str> {
+    if rest.starts_with("'") {
+        Some("'")
+    } else if rest.starts_with("\"") {
+        Some("\"")
+    } else if rest.starts_with("r#\"") {
+        Some("\"#")
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -108,6 +117,14 @@ mod tests {
     fn it_does_not_strip_comments_inside_literals() {
         let inp = "I am code \"with a // funky /* literal */\"";
         assert_eq!(&strip_comments(inp), inp);
+    }
+
+    #[test]
+    fn it_supports_rust_raw_string_literals() {
+        let inp =
+            "r#\"This is a /* literal */ and // should not be stripped \"#//but this is a comment";
+        let expected = "r#\"This is a /* literal */ and // should not be stripped \"#";
+        assert_eq!(&strip_comments(inp), expected);
     }
 
     #[test]
